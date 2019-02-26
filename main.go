@@ -4,32 +4,38 @@ import (
 	"bufio"
 	"fmt"
 	"io"
+	"log"
 	"net/http"
+	_ "net/http/pprof"
 	"os"
 	"strings"
 	"sync"
 )
 
-func countInSource(job Job) int {
+func countInSource(job Job) {
 
 	counts := 0
 	var reader io.Reader
 
-	if job.file{
-		file, err := os.Open(job.location) // For read access.
-		checkError(err)
+	if job.file {
+		file, err := os.Open(job.location)
+		if err != nil {
+			fmt.Println(err)
+			return
+		}
 		defer file.Close()
 
-		reader = bufio.NewReader(file)
+		reader = bufio.NewReader(file) // Fast read access
 	} else {
 		resp, err := http.Get(job.location)
-		checkError(err)
+		if err != nil {
+			fmt.Println(err)
+			return
+		}
 		defer resp.Body.Close()
 
 		reader = bufio.NewReader(resp.Body)
 	}
-
-	var expression = "Go"
 
 	// do I need buffered channels here?
 	introspections := make(chan string)
@@ -39,9 +45,10 @@ func countInSource(job Job) int {
 	wg := new(sync.WaitGroup)
 
 	// start up some workers that will block and wait?
-	for w := 1; w <= 3; w++ {
+
+	for w := 1; w <= 5; w++ {
 		wg.Add(1)
-		go matcher(introspections, results, wg, expression)
+		go matcher(introspections, results, wg, "Go")
 	}
 
 	// Go over a file line by line and queue up a ton of work
@@ -68,7 +75,7 @@ func countInSource(job Job) int {
 
 	fmt.Printf("Count for %s: %d\n", job.location, counts)
 
-	return counts
+	return
 }
 
 func matcher(jobs <-chan string, results chan<- int, wg *sync.WaitGroup, expression string) {
@@ -87,10 +94,15 @@ const maxWorkers = 10
 
 type Job struct {
 	location string
-	file bool
+	file     bool
 }
 
 func main() {
+
+	go func() {
+		log.Println(http.ListenAndServe("localhost:6060", nil))
+	}()
+
 	scanner := bufio.NewScanner(os.Stdin)
 
 	jobs := make(chan Job)
@@ -108,11 +120,10 @@ func main() {
 		}(i)
 	}
 
-
 	for scanner.Scan() {
 		location := scanner.Text()
-		if location == ""{
-			break
+		if location == "" {
+			continue
 		}
 		if strings.Contains(location, "://") {
 			jobs <- Job{location, false}
