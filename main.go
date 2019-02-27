@@ -4,15 +4,14 @@ import (
 	"bufio"
 	"fmt"
 	"io"
-	"log"
 	"net/http"
-	_ "net/http/pprof"
+	//_ "net/http/pprof"
 	"os"
 	"strings"
 	"sync"
 )
 
-func countInSource(job Job) {
+func countInSource(job job) {
 
 	counts := 0
 	var reader io.Reader
@@ -79,8 +78,6 @@ func countInSource(job Job) {
 }
 
 func matcher(jobs <-chan string, results chan<- int, wg *sync.WaitGroup, expression string) {
-	// Decreasing internal counter for wait-group as soon as goroutine finishes
-	defer wg.Done()
 
 	// eventually I want to have a []string channel to work on a chunk of lines not just one line of text
 	for j := range jobs {
@@ -88,35 +85,39 @@ func matcher(jobs <-chan string, results chan<- int, wg *sync.WaitGroup, express
 			results <- 1
 		}
 	}
+
+	// Decreasing internal counter for wait-group as soon as goroutine finishes
+	wg.Done()
 }
 
 const maxWorkers = 10
 
-type Job struct {
+type job struct {
 	location string
 	file     bool
 }
 
 func main() {
 
-	go func() {
-		log.Println(http.ListenAndServe("localhost:6060", nil))
-	}()
+	//go func() {
+	//	log.Println(http.ListenAndServe("localhost:6060", nil))
+	//}()
 
 	scanner := bufio.NewScanner(os.Stdin)
 
-	jobs := make(chan Job)
+	jobs := make(chan job)
 
 	// start workers
 	wg := &sync.WaitGroup{}
 	wg.Add(maxWorkers)
 	for i := 1; i <= maxWorkers; i++ {
 		go func(i int) {
-			defer wg.Done()
 
 			for j := range jobs {
 				countInSource(j)
 			}
+
+			wg.Done()
 		}(i)
 	}
 
@@ -126,9 +127,9 @@ func main() {
 			continue
 		}
 		if strings.Contains(location, "://") {
-			jobs <- Job{location, false}
+			jobs <- job{location, false}
 		} else {
-			jobs <- Job{location, true}
+			jobs <- job{location, true}
 		}
 	}
 
@@ -136,10 +137,4 @@ func main() {
 
 	// wait for workers to complete
 	wg.Wait()
-}
-
-func checkError(err error) {
-	if err != nil {
-		panic(err)
-	}
 }
